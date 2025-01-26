@@ -20,8 +20,8 @@ type storeVal struct {
 var db map[string]storeVal
 
 func main() {
-    port := flag.String("p", "7227", "port for server to listen on")
-    verbose := flag.Bool("v", false, "log tranactions?")
+    port := flag.String("p", "7227", "server port")
+    verbose := flag.Bool("v", false, "log to stdout")
     flag.Parse()
 
     logger := log.New(io.Discard, "", 0)
