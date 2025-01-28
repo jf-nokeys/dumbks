@@ -7,17 +7,19 @@ import (
 	"fmt"
 	"io"
     "log"
-    "os"
 	"net"
+    "os"
+    "sync"
 	"time"
 )
 
 type storeVal struct {
-	value   string
+	value   []byte
 	expires time.Time
 }
 
 var db map[string]storeVal
+var lock sync.RWMutex
 
 func main() {
     port := flag.String("p", "7227", "server port")
@@ -63,6 +65,7 @@ func handleConn(conn net.Conn, logger *log.Logger) {
 		}
 
 		if cmd == 'g' || cmd == 'd' {
+            lock.RLock()
 			key, err := reader.ReadString(0)
 			if err != nil {
 				if err != io.EOF {
@@ -76,7 +79,7 @@ func handleConn(conn net.Conn, logger *log.Logger) {
 
 				if len(rec.value) > 0 && (rec.expires.IsZero() || rec.expires.After(time.Now())) {
                     logger.Printf("g [%s] %s\n", key, rec.value)
-					conn.Write([]byte(rec.value))
+					conn.Write(rec.value)
 				} else {
 					delete(db, key)
                     logger.Printf("g [%s] <NULL>\n", key)
@@ -87,7 +90,9 @@ func handleConn(conn net.Conn, logger *log.Logger) {
                 logger.Printf("d [%s]\n", key)
 				conn.Write(append([]byte(key), []byte(" deleted")...))
 			}
+            lock.RUnlock()
 		} else if cmd == 's' {
+            lock.Lock()
 			var keyLen uint8
 			var valLen uint16
 			var exSec uint32
@@ -106,14 +111,16 @@ func handleConn(conn net.Conn, logger *log.Logger) {
 				ex = time.Now().Add(time.Second * time.Duration(exSec))
 			}
 
-			db[string(key)] = storeVal{string(val), ex}
-            logger.Printf("s [%s] %s %d sec\n", string(key), string(val), exSec)
+			db[string(key)] = storeVal{val, ex}
+            lock.Unlock()
+            logger.Printf("s [%s] %s %d sec\n", string(key), val, exSec)
 
 			conn.Write(append(key, []byte(" added")...))
 		} else {
 			i := reader.Buffered()
 			reader.Discard(i)
 			logger.Printf("unknown cmd %c, discarding %d bytes\n", cmd, i)
+			conn.Write([]byte("\x00"))
 		}
 	}
 }
