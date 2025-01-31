@@ -2,19 +2,23 @@ from socket import socket, AF_INET, SOCK_STREAM
 from struct import pack, unpack
 
 
-class Conn:
+class Client:
     def __init__(self, port=7227):
         self.port = port
 
     def _send_bytes(self, b):
         with socket(AF_INET, SOCK_STREAM) as sock:
-            sock.connect(("localhost", self.port))
-            sock.sendall(b)
-            raw = sock.recv(4096)
+            try:
+                sock.settimeout(1)
+                sock.connect(("localhost", self.port))
+                sock.sendall(b)
+                raw = sock.recv(4096)
 
-            if raw == b"\0":
-                return None
-            return raw
+                if raw == b"\0":
+                    return None
+                return raw
+            except Exception as e:
+                raise
 
     def set(self, key, val, ex=0):
         key = key.encode()
@@ -38,5 +42,8 @@ class Conn:
         return res
 
     def ping(self):
-        return self._send_bytes(b"p")
+        try:
+            return self._send_bytes(b"p")
+        except Exception:
+            return None
 
