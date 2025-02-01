@@ -8,6 +8,9 @@ import (
     "log"
     "net"
     "os"
+
+    "github.com/jf-nokeys/dumbks/db"
+    "github.com/jf-nokeys/dumbks/parse"
 )
 
 var logger *log.Logger
@@ -32,8 +35,7 @@ func main() {
     logger.Println("verbose logging")
     fmt.Fprintln(os.Stderr, "listening on port", *port)
 
-    InitDb()
-
+    ks := db.InitDb()
 
     for {
         conn, err := l.Accept()
@@ -41,16 +43,16 @@ func main() {
             fmt.Println(err)
             continue
         }
-        go handleConn(conn)
+        go handleConn(conn, ks, logger)
     }
 }
 
-func handleConn(conn net.Conn) {
+func handleConn(conn net.Conn, ks *db.DumbKS, logger *log.Logger) {
     reader := bufio.NewReaderSize(conn, 4096)
     defer conn.Close()
 
     for {
-        resp := ParseCmd(reader)
+        resp := parse.ParseCmd(reader, ks, logger)
         conn.Write(resp)
     }
 }

@@ -1,8 +1,10 @@
-package main
+package db
 
 import (
     "bufio"
     "encoding/binary"
+    "io"
+    "log"
     "sync"
     "time"
 )
@@ -13,48 +15,64 @@ type storeVal struct {
 	expires time.Time
 }
 
-var db map[string]storeVal
-var lock sync.RWMutex
-
-func getValue(key string) storeVal {
-    lock.RLock()
-    defer lock.RUnlock()
-    return db[key]
+type DumbKS struct {
+    db map[string]storeVal
+    sync.RWMutex
 }
 
-func delValue(key string) {
-    lock.Lock()
-    defer lock.Unlock()
-    delete(db, key)
+func (ks *DumbKS) getValue(key string) storeVal {
+    ks.RLock()
+    defer ks.RUnlock()
+    return ks.db[key]
 }
 
-func setValue(key string, val []byte, ex time.Time) {
-    lock.Lock()
-    defer lock.Unlock()
-    db[key] = storeVal{val, ex}
+func (ks *DumbKS) delValue(key string) {
+    ks.Lock()
+    defer ks.Unlock()
+    delete(ks.db, key)
 }
 
-func InitDb() {
-    db = make(map[string]storeVal)
+func (ks *DumbKS) setValue(key string, val []byte, ex time.Time) {
+    ks.Lock()
+    defer ks.Unlock()
+    ks.db[key] = storeVal{val, ex}
 }
 
-func GetKey(reader *bufio.Reader) []byte {
-    key := ReadKey(reader)
-    rec := getValue(key)
+func InitDb() *DumbKS {
+    return &DumbKS{
+        db: make(map[string]storeVal),
+    }
+}
+
+func readKey(reader *bufio.Reader, logger *log.Logger) string {
+    key, err := reader.ReadString(0)
+    if err != nil {
+        if err != io.EOF {
+            logger.Println(err)
+        }
+        return ""
+    }
+    return key[:len(key)-1]
+}
+
+
+func (ks *DumbKS) GetKey(reader *bufio.Reader, logger *log.Logger) []byte {
+    key := readKey(reader, logger)
+    rec := ks.getValue(key)
 
     if len(rec.value) > 0 && (rec.expires.IsZero() || rec.expires.After(time.Now())) {
         logger.Printf("g [%s] %s\n", key, rec.value)
         return rec.value
     }
 
-    delValue(key)
+    ks.delValue(key)
     logger.Printf("g [%s] <NULL>\n", key)
     return []byte("\x00")
 }
 
-func DelKey(reader *bufio.Reader) []byte {
-    key := ReadKey(reader)
-    delValue(key)
+func (ks *DumbKS) DelKey(reader *bufio.Reader, logger *log.Logger) []byte {
+    key := readKey(reader, logger)
+    ks.delValue(key)
     logger.Printf("d [%s] <NULL>\n", key)
     return []byte("\x00")
 }
@@ -65,15 +83,13 @@ type setArgs struct {
     exSec uint32
 }
 
-func SetKey(reader *bufio.Reader) []byte {
+func (ks *DumbKS) SetKey(reader *bufio.Reader, logger *log.Logger) []byte {
     var args setArgs
     binary.Read(reader, binary.LittleEndian, &args.keyLen)
     binary.Read(reader, binary.LittleEndian, &args.valLen)
     binary.Read(reader, binary.LittleEndian, &args.exSec)
-    var key []byte
-    var val []byte
-    key = make([]byte, args.keyLen)
-    val = make([]byte, args.valLen)
+    key := make([]byte, args.keyLen)
+    val := make([]byte, args.valLen)
     reader.Read(key)
     reader.Read(val)
 
@@ -81,14 +97,14 @@ func SetKey(reader *bufio.Reader) []byte {
     if args.exSec > 0 {
         ex = time.Now().Add(time.Second * time.Duration(args.exSec))
     }
-    setValue(string(key), val, ex)
+    ks.setValue(string(key), val, ex)
     logger.Printf("s [%s] %s %d sec\n", string(key), val, args.exSec)
     return append(key, []byte(" added")...)
 }
 
-func TtlKey(reader *bufio.Reader) []byte {
-    key := ReadKey(reader)
-    rec := getValue(key)
+func (ks *DumbKS) TtlKey(reader *bufio.Reader, logger *log.Logger) []byte {
+    key := readKey(reader, logger)
+    rec := ks.getValue(key)
 
     if len(rec.value) > 0 {
         if rec.expires.IsZero() {
