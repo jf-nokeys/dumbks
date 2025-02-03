@@ -51,9 +51,7 @@ func handleConn(conn net.Conn, ks *db.DumbKS, logger *log.Logger) {
     reader := bufio.NewReaderSize(conn, 4096)
     defer conn.Close()
 
-    for {
-        resp := parse.ParseCmd(reader, ks, logger)
-        conn.Write(resp)
-    }
+    resp := parse.ParseCmd(reader, ks, logger)
+    conn.Write(resp)
 }
 
