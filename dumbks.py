@@ -18,7 +18,7 @@ class Client:
                     return None
                 return raw
             except Exception as e:
-                raise
+                raise e
 
     def set(self, key, val, ex=0):
         key = key.encode()
@@ -46,4 +46,3 @@ class Client:
             return self._send_bytes(b"p")
         except Exception:
             return None
-
